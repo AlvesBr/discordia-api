@@ -1,0 +1,16 @@
+  version: '3.8'
+
+  services:
+    api-go-db:
+      container_name: go-db
+      image: postgres:12
+      environment:
+        - POSTGRES_USER=postgres
+        - POSTGRES_PASSWORD=1234
+        - POSTGRES_DB=api-go
+      ports:
+        - "5432:5432"
+      volumes:
+        - pgdata:/var/lib/postgresql/data
+  volumes:
+    pgdata: {}
