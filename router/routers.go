@@ -5,15 +5,15 @@ import (
 	"api-go/db"
 	"api-go/repository"
 	"api-go/usecase"
+	"os"
 
 	"github.com/gin-gonic/gin"
 )
 
 func initializeRoutes(router *gin.Engine) {
-
 	dbConection, err := db.ConectDB()
 	if err != nil {
-		panic("Failed to connect to database")
+		panic("Failed to connect to database: " + err.Error())
 	}
 
 	ProductRepository := repository.NewProductRepository(dbConection)
@@ -28,11 +28,14 @@ func initializeRoutes(router *gin.Engine) {
 	CommentUseCase := usecase.NewCommentUseCase(CommentRepository, PostRepository)
 	CommentController := controller.NewCommentController(CommentUseCase)
 
-	server := gin.Default()
+	frontendURL := os.Getenv("FRONTEND_URL")
+	if frontendURL == "" {
+		frontendURL = "http://localhost:4200"
+	}
 
 	// CORS Middleware
-	server.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "http://localhost:4200")
+	router.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", frontendURL)
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
@@ -46,21 +49,26 @@ func initializeRoutes(router *gin.Engine) {
 	})
 
 	// Product Routes
-	server.GET("/products", ProductController.GetProducts)
-	server.GET("/products/:id", ProductController.GetProductById)
-	server.DELETE("/products/:id", ProductController.DeleteProduct)
-	server.PUT("/products/:id", ProductController.UpdateProduct)
-	server.POST("/products", ProductController.CreateProduct)
+	router.GET("/products", ProductController.GetProducts)
+	router.GET("/products/:id", ProductController.GetProductById)
+	router.DELETE("/products/:id", ProductController.DeleteProduct)
+	router.PUT("/products/:id", ProductController.UpdateProduct)
+	router.POST("/products", ProductController.CreateProduct)
 
 	// Post Routes
-	server.GET("/posts", PostController.GetPosts)
-	server.POST("/posts", PostController.CreatePost)
-	server.POST("/posts/:id/like", PostController.ToggleLike)
-	server.POST("/posts/:id/repost", PostController.ToggleRepost)
+	router.GET("/posts", PostController.GetPosts)
+	router.POST("/posts", PostController.CreatePost)
+	router.POST("/posts/:id/like", PostController.ToggleLike)
+	router.POST("/posts/:id/repost", PostController.ToggleRepost)
 
 	// Comment Routes
-	server.GET("/posts/:id/comments", CommentController.GetComments)
-	server.POST("/posts/:id/comments", CommentController.CreateComment)
+	router.GET("/posts/:id/comments", CommentController.GetComments)
+	router.POST("/posts/:id/comments", CommentController.CreateComment)
 
-	server.Run(":8080")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	router.Run(":" + port)
 }

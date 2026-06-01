@@ -1,0 +1,5 @@
+.git
+*.md
+*.sql
+tmp/
+server

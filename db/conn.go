@@ -3,34 +3,31 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"os"
 
 	_ "github.com/lib/pq"
 )
 
-const (
-	host     = "localhost"
-	port     = 5432
-	user     = "postgres"
-	password = "1234"
-	dbName   = "api-go"
-)
-
 func ConectDB() (*sql.DB, error) {
-	psqlInfo := fmt.Sprintf(" host=%s port=%d user=%s "+
-		" password=%s dbname=%s sslmode=disable ",
-		host, port, user, password, dbName)
+	var dsn string
 
-	db, err := sql.Open("postgres", psqlInfo)
-
-	if err != nil {
-		panic(err)
+	if url := os.Getenv("DATABASE_URL"); url != "" {
+		dsn = url
+	} else {
+		dsn = fmt.Sprintf(
+			"host=localhost port=5432 user=postgres password=1234 dbname=api-go sslmode=disable",
+		)
 	}
 
-	err = db.Ping()
+	db, err := sql.Open("postgres", dsn)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("erro ao abrir conexão: %w", err)
 	}
 
-	fmt.Println("Connected to" + dbName + " database")
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("erro ao conectar ao banco: %w", err)
+	}
+
+	fmt.Println("Connected to database")
 	return db, nil
 }
