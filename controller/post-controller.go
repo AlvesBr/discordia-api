@@ -2,9 +2,11 @@ package controller
 
 import (
 	"api-go/model"
+	"api-go/repository"
 	"api-go/usecase"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -29,12 +31,45 @@ func (p *postController) GetPosts(ctx *gin.Context) {
 		limit = 20
 	}
 
-	result, err := p.postUseCase.GetPosts(page, limit)
+	tag := ctx.DefaultQuery("tag", "")
+	if !repository.IsSafeTag(tag) {
+		tag = ""
+	}
+
+	result, err := p.postUseCase.GetPosts(page, limit, tag)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, err)
 		return
 	}
 	ctx.JSON(http.StatusOK, result)
+}
+
+func (p *postController) GetPostsSince(ctx *gin.Context) {
+	tsStr := ctx.Query("ts")
+	if tsStr == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "parâmetro ts é obrigatório"})
+		return
+	}
+
+	since, err := time.Parse(time.RFC3339Nano, tsStr)
+	if err != nil {
+		since, err = time.Parse(time.RFC3339, tsStr)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "ts inválido, use formato RFC3339"})
+			return
+		}
+	}
+
+	posts, err := p.postUseCase.GetPostsSince(since)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, err)
+		return
+	}
+
+	if posts == nil {
+		posts = []model.Post{}
+	}
+	ctx.JSON(http.StatusOK, posts)
 }
 
 func (p *postController) CreatePost(ctx *gin.Context) {

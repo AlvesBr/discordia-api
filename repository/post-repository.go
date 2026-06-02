@@ -4,7 +4,15 @@ import (
 	"api-go/model"
 	"database/sql"
 	"fmt"
+	"regexp"
+	"time"
 )
+
+var tagSafeRegex = regexp.MustCompile(`^[a-zA-Z0-9_]{1,50}$`)
+
+func IsSafeTag(tag string) bool {
+	return tag == "" || tagSafeRegex.MatchString(tag)
+}
 
 type PostRepository struct {
 	connection *sql.DB
@@ -16,9 +24,16 @@ func NewPostRepository(conn *sql.DB) PostRepository {
 	}
 }
 
-func (pr *PostRepository) GetPostsCount() (int, error) {
+func (pr *PostRepository) GetPostsCount(tag string) (int, error) {
 	var total int
-	err := pr.connection.QueryRow("SELECT COUNT(*) FROM posts").Scan(&total)
+	var err error
+	if tag != "" {
+		err = pr.connection.QueryRow(
+			"SELECT COUNT(*) FROM posts WHERE body ILIKE $1", "%#"+tag+"%",
+		).Scan(&total)
+	} else {
+		err = pr.connection.QueryRow("SELECT COUNT(*) FROM posts").Scan(&total)
+	}
 	if err != nil {
 		fmt.Println(err)
 		return 0, err
@@ -35,42 +50,63 @@ func (pr *PostRepository) PostExists(id int) (bool, error) {
 	return count > 0, nil
 }
 
-func (pr *PostRepository) GetPosts(limit, offset int) ([]model.Post, error) {
-	query := `SELECT id, name, handle, initials, avatar_gradient, body, likes, reposts, liked, reposted, created_at,
+func (pr *PostRepository) scanPosts(rows *sql.Rows) ([]model.Post, error) {
+	var postList []model.Post
+	for rows.Next() {
+		var p model.Post
+		if err := rows.Scan(
+			&p.ID, &p.Name, &p.Handle, &p.Initials, &p.AvatarGradient,
+			&p.Body, &p.Likes, &p.Reposts, &p.Liked, &p.Reposted,
+			&p.CreatedAt, &p.CommentCount,
+		); err != nil {
+			fmt.Println(err)
+			return []model.Post{}, err
+		}
+		postList = append(postList, p)
+	}
+	return postList, nil
+}
+
+func (pr *PostRepository) GetPosts(limit, offset int, tag string) ([]model.Post, error) {
+	base := `SELECT id, name, handle, initials, avatar_gradient, body, likes, reposts, liked, reposted, created_at,
 		(SELECT COUNT(*) FROM comments WHERE post_id = posts.id) AS comment_count
-		FROM posts ORDER BY created_at DESC LIMIT $1 OFFSET $2`
-	rows, err := pr.connection.Query(query, limit, offset)
+		FROM posts`
+
+	var rows *sql.Rows
+	var err error
+
+	if tag != "" {
+		rows, err = pr.connection.Query(
+			base+` WHERE body ILIKE $3 ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+			limit, offset, "%#"+tag+"%",
+		)
+	} else {
+		rows, err = pr.connection.Query(
+			base+` ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+			limit, offset,
+		)
+	}
 	if err != nil {
 		fmt.Println(err)
 		return []model.Post{}, err
 	}
 	defer rows.Close()
+	return pr.scanPosts(rows)
+}
 
-	var postList []model.Post
-	for rows.Next() {
-		var postObj model.Post
-		err := rows.Scan(
-			&postObj.ID,
-			&postObj.Name,
-			&postObj.Handle,
-			&postObj.Initials,
-			&postObj.AvatarGradient,
-			&postObj.Body,
-			&postObj.Likes,
-			&postObj.Reposts,
-			&postObj.Liked,
-			&postObj.Reposted,
-			&postObj.CreatedAt,
-			&postObj.CommentCount,
-		)
-		if err != nil {
-			fmt.Println(err)
-			return []model.Post{}, err
-		}
-		postList = append(postList, postObj)
+func (pr *PostRepository) GetPostsSince(since time.Time) ([]model.Post, error) {
+	rows, err := pr.connection.Query(
+		`SELECT id, name, handle, initials, avatar_gradient, body, likes, reposts, liked, reposted, created_at,
+		(SELECT COUNT(*) FROM comments WHERE post_id = posts.id) AS comment_count
+		FROM posts WHERE created_at > $1 ORDER BY created_at ASC LIMIT 50`,
+		since,
+	)
+	if err != nil {
+		fmt.Println(err)
+		return []model.Post{}, err
 	}
-
-	return postList, nil
+	defer rows.Close()
+	return pr.scanPosts(rows)
 }
 
 func (pr *PostRepository) CreatePost(post model.Post) (int, error) {
